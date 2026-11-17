@@ -288,6 +288,14 @@ INCLUDE "data/trainers/special_moves.asm"
 INCLUDE "data/trainers/parties.asm"
 
 TrainerAI:
+; A Pokémon stolen with a Rocket ball has 0 HP: it skips its turn.
+	ld a, [wEnemyMonHP]
+	ld hl, wEnemyMonHP + 1
+	or [hl]
+	jr nz, .enemyAlive
+	scf
+	ret
+.enemyAlive
 	and a
 	ld a, [wIsInBattle]
 	dec a
