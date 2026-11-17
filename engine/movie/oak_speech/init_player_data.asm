@@ -21,6 +21,28 @@ InitPlayerData2:
 	ld hl, wNumBoxItems
 	call InitializeEmptyList
 
+; TEMP TEST GRANT: remove before release
+	ld hl, wNumBagItems
+	ld a, 4
+	ld [hli], a
+	ld a, ROCKET_BALL
+	ld [hli], a
+	ld a, 10
+	ld [hli], a
+	ld a, GREAT_ROCKET_BALL
+	ld [hli], a
+	ld a, 10
+	ld [hli], a
+	ld a, ULTRA_ROCKET_BALL
+	ld [hli], a
+	ld a, 10
+	ld [hli], a
+	ld a, BOSS_BALL
+	ld [hli], a
+	ld a, 10
+	ld [hli], a
+	ld [hl], $ff
+
 DEF START_MONEY EQU $3000
 	ld hl, wPlayerMoney + 1
 	ld a, HIGH(START_MONEY)
