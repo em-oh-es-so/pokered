@@ -43,13 +43,13 @@ ItemNames::
 	li "DOME FOSSIL"
 	li "HELIX FOSSIL"
 	li "SECRET KEY"
-	li "?????" ; ITEM_2C
+	li "ROCKET BALL" ; ROCKET_BALL
 	li "BIKE VOUCHER"
 	li "X ACCURACY"
 	li "LEAF STONE"
 	li "CARD KEY"
 	li "NUGGET"
-	li "PP UP" ; ITEM_32
+	li "ROCKET GREAT" ; GREAT_ROCKET_BALL
 	li "POKé DOLL"
 	li "FULL HEAL"
 	li "REVIVE"
@@ -83,6 +83,8 @@ ItemNames::
 	li "MAX ETHER"
 	li "ELIXER"
 	li "MAX ELIXER"
+	li "ROCKET ULTRA" ; ULTRA_ROCKET_BALL
+	li "BOSS BALL" ; BOSS_BALL
 	assert_list_length NUM_ITEMS
 	li "B2F"
 	li "B1F"
