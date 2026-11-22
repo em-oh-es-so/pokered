@@ -1,19 +1,13 @@
-# Pokeslot
+# Pokeslot interactive demo
 
-Standalone Game Boy slot-game project. Current milestone: an untested ROM boot screen showing POKESLOT. No reels, wagering, audio playback, or saving are implemented yet.
+Build: install RGBDS 0.9.1 and Python Pillow, then run `make -C pokeslot`. The workflow installs these dependencies and packages the ROM.
 
-## Build
+This milestone adds five reels with three visible symbols each, compact source-derived Pokemon artwork, A-button spins, staggered stops, and a temporary coin counter. Up/Down selects bets from 1 to 9. Select resets coins to 200 and bet to 1 while idle. Spins deduct the displayed bet. No paylines, payouts, bonus rules, saving, or audio are implemented. The bet is a demo spin cost, not a per-line wager. Randomness is a visual prototype, not a verified payout RNG.
 
-Install RGBDS 0.9.1 and run `make -C pokeslot` from the repository root. Output: `pokeslot/build/pokeslot.gb`.
+The machine definition in generate.py selects a name and roster. Only the first definition is used at present; runtime machine selection, reel strips, symbol weights, and payout data will be added later. The starter roster is Bulbasaur, Charmander, Squirtle, Pikachu, Eevee, and Ditto.
 
-The Pokeslot ROM workflow builds this project independently of the original Pokemon Red/Blue Makefile and uploads a ZIP containing the ROM, map, and symbols. Import the GB file into Delta after extracting if necessary.
+All original assets remain intact. The compact 16x16 symbols are generated automatically and require visual review in Delta. The original boot-only src/main.asm is retained as a reference but is no longer the Makefile entry point.
 
-The first Actions run and a Delta boot test must pass before this is considered verified.
+Test checklist: build succeeds; title and six species are recognizable; each A press starts one spin; five reels stop in order; holding A does not repeatedly spin; Up/Down respects 1-9; a spin subtracts the chosen bet; insufficient coins blocks a spin; Select restores 200 while idle. Saving and 25-payline accounting are later milestones.
 
-## Planned architecture
-
-One shared five-reel, three-row engine with 25 paylines. Machine definitions will hold names, species rosters, reel strips, payout tables, and bonus settings. The first playable milestone is one complete machine; additional machines follow through data definitions.
-
-Preserve all original front sprites in `gfx/pokemon/front/` and species metadata until extraction is complete. Original slot artwork lives in `gfx/slots/`. These assets are not yet included in this boot-test ROM. Keep original assets separate from generated compact reel symbols. No inherited assets or original build files have been deleted.
-
-Pokemon and original game assets belong to their respective rights holders. This is an unofficial fan project, not a license grant for those assets. Upstream source: https://github.com/pret/pokered.
+Unofficial fan project. Pokemon and original assets belong to their respective rights holders. Upstream: https://github.com/pret/pokered.

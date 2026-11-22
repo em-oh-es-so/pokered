@@ -1,9 +1,10 @@
 BUILD := build
 .PHONY: all clean
 all: $(BUILD)/pokeslot.gb
-$(BUILD):
-	mkdir -p $@
-$(BUILD)/main.o: src/main.asm | $(BUILD)
+$(BUILD)/generated.asm: generate.py $(wildcard ../gfx/pokemon/front/*.png)
+	mkdir -p $(BUILD)
+	python3 generate.py
+$(BUILD)/main.o: $(BUILD)/generated.asm
 	rgbasm -Wall -o $@ $<
 $(BUILD)/pokeslot.gb: $(BUILD)/main.o
 	rgblink -m $(BUILD)/pokeslot.map -n $(BUILD)/pokeslot.sym -o $@ $<
