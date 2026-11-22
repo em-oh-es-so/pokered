@@ -1,0 +1,44 @@
+name: Pokeslot ROM Accounting Tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/accounting.mk'
+      - 'pokeslot/accounting_tables.py'
+      - 'pokeslot/src/accounting_test.asm'
+      - 'pokeslot/test_accounting_rom.py'
+      - 'pokeslot/rules/**'
+      - '.github/workflows/pokeslot-accounting.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and emulator dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0
+          python3 -m venv .accounting-venv
+          .accounting-venv/bin/pip install 'pyboy>=2,<3'
+      - name: Build RGBDS
+        run: |
+          git clone --depth 1 --branch v0.9.1 https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Check Python reference
+        run: python3 -m unittest discover -s pokeslot/rules -p 'test_*.py' -v
+      - name: Build accounting ROM
+        run: make -C pokeslot -f accounting.mk
+      - name: Verify assembled accounting in emulator
+        run: .accounting-venv/bin/python pokeslot/test_accounting_rom.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-rom-accounting-report
+          path: |
+            pokeslot/build/accounting/rom-accounting-report.json
+            pokeslot/build/accounting/table-manifest.json
+          if-no-files-found: error
