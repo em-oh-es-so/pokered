@@ -1,0 +1,40 @@
+name: Pokeslot Five Reel Test
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/streaming_five.mk'
+      - 'pokeslot/five_assets.py'
+      - 'pokeslot/src/cabinet_five.asm'
+      - 'pokeslot/preview_classic.py'
+      - 'pokeslot/preview_layout.py'
+      - 'gfx/font/**'
+      - 'gfx/slots/**'
+      - 'gfx/pokemon/front/**'
+      - '.github/workflows/pokeslot-five.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libpng-dev pkg-config zip python3-pil
+      - name: Build RGBDS
+        run: |
+          git clone --depth 1 --branch v0.9.1 https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Build five-reel diagnostic
+        run: make -C pokeslot -f streaming_five.mk
+      - name: Package diagnostic
+        run: |
+          cd pokeslot/build/five
+          zip cabinet-five.zip cabinet-five.gbc cabinet-five.map cabinet-five.sym five-report.json expected-cabinet-8x.png README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-five-reel-test
+          path: pokeslot/build/five/cabinet-five.zip
+          if-no-files-found: error
