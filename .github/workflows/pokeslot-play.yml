@@ -1,0 +1,53 @@
+name: Pokeslot Playable Cabinet
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/play.mk'
+      - 'pokeslot/play_build.py'
+      - 'pokeslot/src/play_runtime.asm'
+      - 'pokeslot/src/cabinet_five.asm'
+      - 'pokeslot/src/accounting_test.asm'
+      - 'pokeslot/five_assets.py'
+      - 'pokeslot/accounting_tables.py'
+      - 'pokeslot/preview_classic.py'
+      - 'pokeslot/preview_layout.py'
+      - 'pokeslot/test_play_rom.py'
+      - 'pokeslot/rules/**'
+      - '.github/workflows/pokeslot-play.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0
+          python3 -m venv .play-venv
+          .play-venv/bin/pip install pillow 'pyboy>=2,<3'
+      - name: RGBDS
+        run: |
+          git clone --depth 1 --branch v0.9.1 https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Reference tests
+        run: python3 -m unittest discover -s pokeslot/rules -p 'test_*.py' -v
+      - name: Build playable cabinet
+        run: PATH="$GITHUB_WORKSPACE/.play-venv/bin:$PATH" make -C pokeslot -f play.mk
+      - name: Integration tests
+        run: .play-venv/bin/python pokeslot/test_play_rom.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-playable-cabinet
+          path: |
+            pokeslot/build/play/pokeslot-play.gbc
+            pokeslot/build/play/README.txt
+            pokeslot/build/play/integration-report.json
+            pokeslot/build/play/five-report.json
+            pokeslot/build/play/ui-layout.json
+          if-no-files-found: error
