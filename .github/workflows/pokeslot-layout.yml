@@ -1,0 +1,27 @@
+name: Pokeslot Layout Preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/preview_layout.py'
+      - 'gfx/font/**'
+      - 'gfx/slots/**'
+      - 'gfx/pokemon/front/**'
+      - '.github/workflows/pokeslot-layout.yml'
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pillow
+        run: sudo apt-get update && sudo apt-get install -y python3-pil
+      - name: Render native-size layout candidates
+        run: python3 pokeslot/preview_layout.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-layout-review
+          path: pokeslot/build/layout-review/
+          if-no-files-found: error
