@@ -40,7 +40,7 @@ for char in '0123456789 ':
         static.append(data)
     digit_ids.append(lookup[data])
 plan = [None] * 5""")
-namespace = {'__file__': str(HERE / 'five_assets.py')}
+namespace = {'__file__': str(HERE / 'five_assets.py'), 'ImageDraw': ImageDraw}
 exec(compile(assets, str(HERE / 'five_assets.py'), 'exec'), namespace)
 digits = namespace['digit_ids']
 inc_path = OUT / 'assets.inc'
