@@ -137,8 +137,11 @@ SpinFrame:
     ld hl, Stops
     add hl, de
     ld a, [Timer]
+    and a
+    jr z, .align
     cp [hl]
     jr nc, .advance
+.align
     ld a, c
 .mod
     cp 6
