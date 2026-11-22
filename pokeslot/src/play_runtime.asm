@@ -368,7 +368,10 @@ OpenMenu:
     call DrawMenu
     jr .loop
 .exit
+    call Frame
     xor a
+    ldh [$40], a
+    ldh [$4f], a
     ld [MenuMode], a
     jp RestoreCabinet
 DrawMenu:
