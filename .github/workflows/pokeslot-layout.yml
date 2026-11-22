@@ -6,6 +6,7 @@ on:
     paths:
       - 'pokeslot/preview_layout.py'
       - 'pokeslot/preview_classic.py'
+      - 'pokeslot/compile_cabinet.py'
       - 'gfx/font/**'
       - 'gfx/slots/**'
       - 'gfx/pokemon/front/**'
@@ -19,8 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Pillow
         run: sudo apt-get update && sudo apt-get install -y python3-pil
-      - name: Render original-style cabinet candidates
-        run: python3 pokeslot/preview_classic.py
+      - name: Compile and verify approved cabinet assets
+        run: python3 pokeslot/compile_cabinet.py
       - uses: actions/upload-artifact@v4
         with:
           name: pokeslot-layout-review
