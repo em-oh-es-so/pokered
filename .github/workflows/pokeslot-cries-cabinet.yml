@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0 zip
           python3 -m venv .music-venv
           .music-venv/bin/pip install pillow 'pyboy>=2,<3'
-          python3 -m py_compile pokeslot/cry_cabinet_build.py pokeslot/test_cabinet_cries.py
+          python3 -m py_compile pokeslot/cry_cabinet_build.py pokeslot/test_cabinet_cries.py pokeslot/cry_mix_build.py pokeslot/test_cry_mix.py
       - name: Build pinned RGBDS
         run: |
           VERSION="$(tr -d '[:space:]' < .rgbds-version)"
@@ -45,6 +45,7 @@ jobs:
           python3 pokeslot/music_cabinet_build.py
           python3 pokeslot/effects_cabinet_build.py
           python3 pokeslot/cry_cabinet_build.py
+          python3 pokeslot/cry_mix_build.py
       - name: Assemble candidate and fixture ROM
         working-directory: pokeslot
         run: |
@@ -54,8 +55,8 @@ jobs:
           rgbasm -Wall -I ../ -D WIN_TESTS=1 -o build/music-cabinet/highlights-test.o build/music-cabinet/main.asm
           rgblink -n build/music-cabinet/highlights-test.sym -o build/music-cabinet/highlights-test.gbc build/music-cabinet/highlights-test.o
           rgbfix -v -C -p 0 -m 0x1a -r 0x02 -t WINTEST build/music-cabinet/highlights-test.gbc
-      - name: Check runtime decisions, six cries and payout sequencing
-        run: .music-venv/bin/python pokeslot/test_cabinet_cries.py
+      - name: Check six cries, preview, mix ducking and volume restoration
+        run: .music-venv/bin/python pokeslot/test_cry_mix.py
       - name: Play and accounting regression with cries enabled
         run: .music-venv/bin/python pokeslot/run_music_regression.py play
       - name: Existing speed gate with cries enabled
@@ -66,7 +67,7 @@ jobs:
         run: |
           mkdir -p pokeslot/build/music-cabinet/delivery
           cd pokeslot/build/music-cabinet
-          cp pokeslot-play.gbc README.txt cry-candidate-layout.json integration-report.json speed-report.json win-report.json music-*-report.json cry-cabinet-*.wav delivery/
+          cp pokeslot-play.gbc README.txt cry-candidate-layout.json cry-mix-layout.json cry-mix-report.json integration-report.json speed-report.json win-report.json music-*-report.json cry-cabinet-*.wav delivery/
           printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > delivery/build-info.txt
           cd delivery
           zip ../pokeslot-cries-cabinet.zip *.gbc *.json *.txt *.wav
@@ -84,6 +85,7 @@ jobs:
           path: |
             pokeslot/build/music-cabinet/*report.json
             pokeslot/build/music-cabinet/*failure.json
+            pokeslot/build/music-cabinet/cry-mix-layout.json
             pokeslot/build/music-cabinet/play.sym
             pokeslot/build/music-cabinet/play.map
             pokeslot/build/music-cabinet/main.asm
