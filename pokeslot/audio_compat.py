@@ -29,6 +29,7 @@ for text in unchanged:
 assert normalize_ldh('ldh [$26], a ; [$44]\n')=='ldh [$FF26], a ; [$44]\n'
 changes={}
 sweep_sites=0
+prime_banks=0
 for name in ('bench.asm','native.inc'):
     path=OUT/name
     before=path.read_text()
@@ -41,6 +42,55 @@ for name in ('bench.asm','native.inc'):
         assert sweep_sites==6, ('Expected exactly six native reset routines',sweep_sites)
         after=after.replace(old,new)
         assert after.count(new)==6
+        for bank in range(24,30):
+            entry=f'    jp Bank{bank}_NativeReset\n'
+            after=replace(after,entry,entry+f'    jp Bank{bank}_NativePrimeSound\n')
+            primer=f'''Bank{bank}_NativePrimeSound:
+    push af
+    add a
+    ld e, a
+    ld d, 0
+    ld hl, Bank{bank}_NativeHeaderPointers
+    add hl, de
+    ld a, [hli]
+    ld h, [hl]
+    ld l, a
+    ld a, [hli]
+    ld b, a
+    and a
+    jr z, .empty
+.headerLoop
+    ld c, [hl]
+    inc hl
+    inc hl
+    inc hl
+    push hl
+    push bc
+    ld b, 0
+    call Bank{bank}_Audio1_ApplyMusicAffects
+    pop bc
+    pop hl
+    dec b
+    jr nz, .headerLoop
+    pop af
+    cp NATIVE_SONG_ID
+    ret nz
+    ld c, CHAN8
+    ld b, 0
+    ld a, [wChannelSoundIDs+CHAN8]
+    and a
+    ret z
+    ld a, [wChannelNoteDelayCounters+CHAN8]
+    cp 1
+    ret nz
+    jp Bank{bank}_Audio1_ApplyMusicAffects
+.empty
+    pop af
+    ret
+'''
+            header=f'Bank{bank}_NativeHeaderPointers:'
+            after=replace(after,header,primer+header)
+            prime_banks+=1
     else:
         after=replace(after,'ControlEnd:\n','''AudioEntryLY: ds 1
 AudioExitLY: ds 1
@@ -59,6 +109,19 @@ ControlEnd:
     di
     ld a, [Command]
     ld b, a
+''')
+        after=replace(after,'    call $4006\n    jr .done\n','''    call $4006
+    ld a, NATIVE_SONG_ID
+    call $400c
+    jr .done
+''')
+        sound_call='    call $4003\n    jr .done\n'
+        assert after.count(sound_call)==2
+        after=after.replace(sound_call,'''    push af
+    call $4003
+    pop af
+    call $400c
+    jr .done
 ''')
         after=replace(after,'    push hl\n    call $4000\n','''    push hl
     ldh a, [$FF44]
@@ -105,4 +168,4 @@ ControlEnd:
         assert '    cp 152\n    jr c, .exit\n' in after
     path.write_text(after)
 version=(HERE.parent/'.rgbds-version').read_text().strip()
-(OUT/'audio-compat-report.json').write_text(json.dumps({'rgbds_version':version,'address_forms_checked':512,'unchanged_cases_checked':len(unchanged),'comment_preservation_checked':True,'changed_lines':changes,'native_reset_sweep_clears_inserted':sweep_sites,'command_setup_window_scanlines':[0,15],'audio_exit_deadline_unchanged':152,'irq_entry_exit_instrumented':True,'full_rom_build_verified':False},indent=2))
+(OUT/'audio-compat-report.json').write_text(json.dumps({'rgbds_version':version,'address_forms_checked':512,'unchanged_cases_checked':len(unchanged),'comment_preservation_checked':True,'changed_lines':changes,'native_reset_sweep_clears_inserted':sweep_sites,'command_setup_window_scanlines':[0,15],'startup_prime_banks':prime_banks,'startup_priming_limited_to_requested_header_channels':True,'initial_song_drum_channel_primed_if_needed':True,'audio_exit_deadline_unchanged':152,'irq_entry_exit_instrumented':True,'full_rom_build_verified':False},indent=2))
