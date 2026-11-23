@@ -1,0 +1,32 @@
+name: Pokeslot Win Cry Policy Check
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/cry_policy.py'
+      - 'pokeslot/test_cry_policy.py'
+      - 'pokeslot/rules/**'
+      - '.github/workflows/pokeslot-cry-policy.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check syntax
+        run: python3 -m py_compile pokeslot/cry_policy.py pokeslot/test_cry_policy.py
+      - name: Audit cry policy and packed decision tables
+        run: python3 pokeslot/test_cry_policy.py
+      - name: Preserve cry policy report and decision data, not a game build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-cry-policy-not-a-game-build
+          path: |
+            pokeslot/build/cry-policy/cry-policy-report.json
+            pokeslot/build/cry-policy/cry-policy-manifest.json
+            pokeslot/build/cry-policy/*.bin
+          if-no-files-found: warn
