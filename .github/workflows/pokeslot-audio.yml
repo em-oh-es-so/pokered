@@ -5,13 +5,16 @@ on:
     branches: [pokeslot]
     paths:
       - 'pokeslot/native_audio_build.py'
+      - 'pokeslot/audio_compat.py'
       - 'pokeslot/native_audio.mk'
       - 'pokeslot/test_native_audio.py'
       - 'pokeslot/rules/machine.json'
       - 'audio/**'
-      - 'constants/audio_constants.asm'
-      - 'macros/scripts/audio.asm'
+      - 'constants/**'
+      - 'macros/**'
+      - 'ram/wram.asm'
       - 'data/pokemon/cries.asm'
+      - '.rgbds-version'
       - '.github/workflows/pokeslot-audio.yml'
 permissions:
   contents: read
@@ -27,11 +30,16 @@ jobs:
           sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0 zip
           python3 -m venv .audio-venv
           .audio-venv/bin/pip install 'pyboy>=2,<3'
-      - name: RGBDS
+      - name: Check Python syntax
+        run: python3 -m py_compile pokeslot/native_audio_build.py pokeslot/audio_compat.py pokeslot/test_native_audio.py
+      - name: Build repository-pinned RGBDS
         run: |
-          git clone --depth 1 --branch v0.9.1 https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          RGBDS_VERSION="$(tr -d '[:space:]' < .rgbds-version)"
+          [[ "$RGBDS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git clone --depth 1 --branch "v$RGBDS_VERSION" https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
           make -C "$RUNNER_TEMP/rgbds" -j2
           sudo make -C "$RUNNER_TEMP/rgbds" install
+          rgbasm --version
       - name: Build isolated native audio ROM
         run: make -C pokeslot -f native_audio.mk
       - name: Record original music and sound previews
@@ -39,7 +47,7 @@ jobs:
       - name: Package audio-preview ZIP
         run: |
           cd pokeslot/build/audio
-          cp native-audio-report.json audio-assets.json previews/
+          cp native-audio-report.json audio-assets.json audio-compat-report.json previews/
           printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > previews/build-info.txt
           cd previews
           zip ../pokeslot-native-audio-previews.zip *.wav *.json *.txt
