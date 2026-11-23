@@ -11,7 +11,8 @@ class GuardedPyBoy:
         kwargs.update(sound_emulated=True,sound_sample_rate=24000)
         self._p=PyBoy(rom,**kwargs)
         self.sym={}
-        for line in Path(rom).with_suffix('.sym').read_text().splitlines():
+        symbol_name='play.sym' if Path(rom).name=='pokeslot-play.gbc' else Path(rom).with_suffix('.sym').name
+        for line in (Path(rom).parent/symbol_name).read_text().splitlines():
             parts=line.split()
             if len(parts)==2 and ':' in parts[0] and not parts[0].startswith(';'):
                 self.sym[parts[1]]=int(parts[0].split(':')[1],16)
