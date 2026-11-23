@@ -1,0 +1,66 @@
+name: Pokeslot SRAM Audio Playback
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/audio_sram_build.py'
+      - 'pokeslot/test_sram_audio.py'
+      - 'pokeslot/audio_ram_probe.py'
+      - 'pokeslot/native_audio_build.py'
+      - 'pokeslot/audio_compat.py'
+      - 'pokeslot/audio_worker_build.py'
+      - 'pokeslot/native_audio.mk'
+      - 'pokeslot/rules/machine.json'
+      - 'audio/**'
+      - 'constants/**'
+      - 'macros/**'
+      - 'ram/wram.asm'
+      - 'data/pokemon/cries.asm'
+      - '.rgbds-version'
+      - '.github/workflows/pokeslot-sram-audio.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies and Python syntax
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0
+          python3 -m venv .audio-venv
+          .audio-venv/bin/pip install pillow 'pyboy>=2,<3'
+          python3 -m py_compile pokeslot/audio_sram_build.py pokeslot/test_sram_audio.py
+      - name: Build repository-pinned RGBDS
+        run: |
+          RGBDS_VERSION="$(tr -d '[:space:]' < .rgbds-version)"
+          [[ "$RGBDS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git clone --depth 1 --branch "v$RGBDS_VERSION" https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Build isolated SRAM audio ROM
+        working-directory: pokeslot
+        run: |
+          make -f native_audio.mk
+          python3 audio_sram_build.py
+          rgbasm -Wall -I ../ -o build/audio/sram-audio.o build/audio/sram-audio.asm
+          rgblink -n build/audio/sram-audio.sym -m build/audio/sram-audio.map -o build/audio/sram-audio.gbc build/audio/sram-audio.o
+          rgbfix -v -C -p 0 -m 0x1a -r 0x02 -t SRAMAUDIO build/audio/sram-audio.gbc
+      - name: Verify SRAM playback and ROM-bank independence
+        run: .audio-venv/bin/python pokeslot/test_sram_audio.py
+      - name: Preserve reports and WAV previews, not a cabinet ROM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-sram-audio-test-not-a-cabinet-build
+          path: |
+            pokeslot/build/audio/sram-audio-report.json
+            pokeslot/build/audio/sram-audio-debug.json
+            pokeslot/build/audio/sram-audio.sym
+            pokeslot/build/audio/sram-audio.map
+            pokeslot/build/audio/audio-assets.json
+            pokeslot/build/audio/sram-previews/*.wav
+          if-no-files-found: warn
