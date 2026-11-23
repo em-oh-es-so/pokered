@@ -1,9 +1,10 @@
 OUT := build/audio
 .PHONY: all
 all: $(OUT)/native-audio.gbc
-$(OUT)/bench.asm: native_audio_build.py audio_compat.py rules/machine.json $(wildcard ../audio/*.asm) $(wildcard ../audio/music/*.asm) $(wildcard ../audio/sfx/*.asm) ../data/pokemon/cries.asm ../ram/wram.asm ../.rgbds-version
+$(OUT)/bench.asm: native_audio_build.py audio_compat.py audio_worker_build.py rules/machine.json $(wildcard ../audio/*.asm) $(wildcard ../audio/music/*.asm) $(wildcard ../audio/sfx/*.asm) ../data/pokemon/cries.asm ../ram/wram.asm ../.rgbds-version
 	python3 native_audio_build.py
 	python3 audio_compat.py
+	python3 audio_worker_build.py
 $(OUT)/bench.o: $(OUT)/bench.asm
 	rgbasm -Wall -I ../ -o $@ $<
 $(OUT)/native-audio.gbc: $(OUT)/bench.o

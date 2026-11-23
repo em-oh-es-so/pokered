@@ -6,6 +6,7 @@ on:
     paths:
       - 'pokeslot/native_audio_build.py'
       - 'pokeslot/audio_compat.py'
+      - 'pokeslot/audio_worker_build.py'
       - 'pokeslot/native_audio.mk'
       - 'pokeslot/test_native_audio.py'
       - 'pokeslot/rules/machine.json'
@@ -31,7 +32,7 @@ jobs:
           python3 -m venv .audio-venv
           .audio-venv/bin/pip install pillow 'pyboy>=2,<3'
       - name: Check Python syntax
-        run: python3 -m py_compile pokeslot/native_audio_build.py pokeslot/audio_compat.py pokeslot/test_native_audio.py
+        run: python3 -m py_compile pokeslot/native_audio_build.py pokeslot/audio_compat.py pokeslot/audio_worker_build.py pokeslot/test_native_audio.py
       - name: Build repository-pinned RGBDS
         run: |
           RGBDS_VERSION="$(tr -d '[:space:]' < .rgbds-version)"

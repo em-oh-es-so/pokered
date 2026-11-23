@@ -21,45 +21,45 @@ p.set_emulation_speed(0)
 results=[]
 last_command=None
 current_clip=None
-current_irq=None
-last_irq=None
-worst_irq=None
-first_core_deadline_miss=None
+current_update=None
+last_update=None
+worst_update=None
+first_vblank_window_miss=None
 registered_hooks=[]
 
 def read(name,n=1):
     a=symbols[name]
     return int.from_bytes(bytes(p.memory[a:a+n]),'little')
 
-def irq_timing():
-    return {'entry_scanline':read('AudioEntryLY'),'core_exit_scanline':read('AudioExitLY'),'maximum_core_scanline_span':read('AudioMaximumSpan'),'late_interrupt_entries':read('AudioLateEntries',2),'fault_entry_scanline':read('AudioFaultEntryLY'),'fault_core_exit_scanline':read('AudioFaultExitLY'),'fault_deadline_check_scanline':read('AudioFaultCheckLY'),'maximum_deadline_check_scanline':read('AudioMaximumLY')}
+def timing():
+    return {'irq_entry_scanline':read('AudioEntryLY'),'worker_start_scanline':read('AudioWorkerStartLY'),'core_exit_scanline':read('AudioExitLY'),'maximum_core_scanline_span':read('AudioMaximumSpan'),'late_interrupt_entries':read('AudioLateEntries',2),'frame_requests':read('AudioFrameRequests',2),'updates_completed':read('AudioTicks',2),'update_pending':read('AudioPending'),'worker_busy':read('AudioBusy'),'frame_overrun':read('AudioFrameOverrun'),'legacy_vblank_only_limit_met':read('AudioBudgetExceeded')==0,'vblank_fault_start':read('AudioFaultEntryLY'),'vblank_fault_exit':read('AudioFaultExitLY'),'vblank_fault_check':read('AudioFaultCheckLY')}
 
-def begin_irq(context):
-    global current_irq
-    current_irq={'divider_start':p.memory[0xff04],'entry_scanline':p.memory[0xff44],'command':last_command,'current_song':read('CurrentSong'),'function_counts':{}}
+def begin_update(context):
+    global current_update
+    current_update={'divider_start':p.memory[0xff04],'entry_scanline':p.memory[0xff44],'command':last_command,'current_song':read('CurrentSong'),'function_counts':{}}
 
 def count_function(name):
-    if current_irq is not None:
+    if current_update is not None:
         key=f'{name}:channel-{p.register_file.C}'
-        counts=current_irq['function_counts']
+        counts=current_update['function_counts']
         counts[key]=counts.get(key,0)+1
 
-def end_irq(context):
-    global current_irq,last_irq,worst_irq,first_core_deadline_miss
-    if current_irq is None:
+def end_update(context):
+    global current_update,last_update,worst_update,first_vblank_window_miss
+    if current_update is None:
         return
-    current_irq['divider_end']=p.memory[0xff04]
-    current_irq['core_exit_scanline']=read('AudioExitLY')
-    delta=(current_irq['divider_end']-current_irq['divider_start'])&255
-    current_irq['divider_tick_delta']=delta
-    current_irq['approximate_cpu_clock_lower_bound']=max(0,(delta-1)*256)
-    current_irq['approximate_cpu_clock_upper_bound']=(delta+1)*256
-    last_irq=current_irq
-    if worst_irq is None or delta>worst_irq['divider_tick_delta']:
-        worst_irq=current_irq
-    if first_core_deadline_miss is None and (current_irq['core_exit_scanline']<144 or current_irq['core_exit_scanline']>=152):
-        first_core_deadline_miss=current_irq
-    current_irq=None
+    current_update['divider_end']=p.memory[0xff04]
+    current_update['core_exit_scanline']=read('AudioExitLY')
+    delta=(current_update['divider_end']-current_update['divider_start'])&255
+    current_update['divider_tick_delta']=delta
+    current_update['approximate_cpu_clock_lower_bound']=max(0,(delta-1)*256)
+    current_update['approximate_cpu_clock_upper_bound']=(delta+1)*256
+    last_update=current_update
+    if worst_update is None or delta>worst_update['divider_tick_delta']:
+        worst_update=current_update
+    if first_vblank_window_miss is None and (current_update['core_exit_scanline']<144 or current_update['core_exit_scanline']>=152):
+        first_vblank_window_miss=current_update
+    current_update=None
 
 def register_hook(symbol,callback,context):
     bank,address=locations[symbol]
@@ -67,7 +67,7 @@ def register_hook(symbol,callback,context):
     registered_hooks.append(symbol)
 
 def profile():
-    return {'first_core_deadline_miss':first_core_deadline_miss,'worst_update_by_divider':worst_irq,'last_update':last_irq,'registered_hook_count':len(registered_hooks),'divider_measurements_quantized_and_modulo_65536':True,'profiler_does_not_replace_timing_or_non_silence_assertions':True}
+    return {'first_vblank_only_window_miss':first_vblank_window_miss,'worst_update_by_divider':worst_update,'last_update':last_update,'registered_hook_count':len(registered_hooks),'divider_measurements_quantized_and_modulo_65536':True}
 
 def state():
     arrays={}
@@ -77,10 +77,11 @@ def state():
     a=symbols['wChannelCommandPointers']
     arrays['channel_pointers']=[int.from_bytes(bytes(p.memory[a+i*2:a+i*2+2]),'little') for i in range(8)]
     registers={f'FF{address:02X}':p.memory[0xff00+address] for address in range(0x10,0x27)}
-    return {'audio_ticks':read('AudioTicks',2),'current_song':read('CurrentSong'),'registers':registers,'software_channels':arrays,'valid_sample_frames':int(p.sound.ndarray.shape[0]),'irq_timing':irq_timing()}
+    return {'audio_ticks':read('AudioTicks',2),'current_song':read('CurrentSong'),'registers':registers,'software_channels':arrays,'valid_sample_frames':int(p.sound.ndarray.shape[0]),'timing':timing()}
 
 def tick(n=1):
     assert p.tick(n,False,True)
+    assert read('AudioFrameOverrun')==0,('Audio worker missed a frame deadline',timing())
 
 def command(code,**values):
     global last_command
@@ -123,13 +124,12 @@ def capture(name,frames,onset):
     return {'name':name,'sample_frames':len(audio),'seconds':len(audio)/p.sound.sample_rate,'peak_to_peak':span,'command_frames_captured':len(onset_chunks)}
 
 try:
-    register_hook('AudioIRQ',begin_irq,None)
-    register_hook('AudioIRQ.timingSpanReady',end_irq,None)
+    register_hook('AudioWorker',begin_update,None)
+    register_hook('AudioWorker.timingSpanReady',end_update,None)
     functions=('PlayNextNote','GetNextMusicByte','PlaySound','MultiplyAdd','CalculateFrequency','InitPitchSlideVars')
     for bank in range(24,30):
         for function in functions:
-            symbol=f'Bank{bank}_Audio1_{function}'
-            register_hook(symbol,count_function,function)
+            register_hook(f'Bank{bank}_Audio1_{function}',count_function,function)
         register_hook(f'Bank{bank}_Audio1_InitPitchSlideVars.divideLoop',count_function,'pitch-slide-subtraction-iteration')
     for _ in range(240):
         tick()
@@ -154,18 +154,18 @@ try:
         results.append(capture('cry-'+name,240,onset))
         a=symbols['wChannelSoundIDs']
         assert not any(p.memory[a+4:a+8]),('Cry did not finish',name)
-    print('AUDIO UPDATE PROFILE: '+json.dumps(profile()))
-    assert read('AudioBudgetExceeded')==0,('Native audio exceeded VBlank safety budget',irq_timing())
-    assert read('AudioLateEntries',2)==0,('Audio interrupt started late',irq_timing())
-    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'vblank_budget_passed':True,'irq_timing':irq_timing(),'update_profile':profile(),'maximum_update_end_scanline':read('AudioMaximumLY'),'cabinet_integration_complete':False,'human_listening_approval':False}
+    assert read('AudioFrameOverrun')==0,('Audio worker missed a frame deadline',timing())
+    assert read('AudioLateEntries',2)==0,('Scheduling interrupt started late',timing())
+    outstanding=(read('AudioFrameRequests',2)-read('AudioTicks',2))&65535
+    assert outstanding<=1,('Audio updates fell behind frame requests',timing())
+    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'no_missed_frame_updates':True,'vblank_budget_passed':read('AudioBudgetExceeded')==0,'vblank_only_limit_is_diagnostic_not_playback_pass_criterion':True,'timing':timing(),'update_profile':profile(),'cabinet_integration_complete':False,'cabinet_graphics_dma_safety_verified':False,'human_listening_approval':False}
     (OUT/'native-audio-report.json').write_text(json.dumps(report,indent=2))
-    (PREVIEWS/'README.txt').write_text('NATIVE AUDIO PREVIEWS - NOT A PLAYABLE CABINET UPDATE\nThese WAV files were recorded from the standalone native-audio test ROM in PyBoy, including the frames that accept playback commands. Music clips are short excerpts, not complete tracks.\nSix soundtrack selections, five original interface/slot effects and six species cries are included. Cries retain the original pitch and duration modifiers.\nAutomated non-silence and update-budget tests do not replace listening checks or prove integration with reel DMA, menus, win thresholds or the playlist. Those cabinet features are not implemented by this commit.\n')
+    (PREVIEWS/'README.txt').write_text('NATIVE AUDIO PREVIEWS - NOT A PLAYABLE CABINET UPDATE\nThese clips are recorded from a standalone audio ROM. VBlank requests one update per frame; a foreground worker runs the native interpreter.\nPassing verifies non-silent output, update cadence and no missed frame updates. The former VBlank-only fit measurement remains in the report and may be false.\nPassing DOES NOT verify cabinet graphics/DMA compatibility, the music selector, automatic playlist or payout-triggered cries. Those require a separate integrated build.\nMusic clips are excerpts. Six tracks, five effects and six species cries are included. Listening approval remains outstanding.\n')
     print(json.dumps(report,indent=2))
 except Exception as error:
     debug={'error_type':type(error).__name__,'error':str(error),'last_command':last_command,'completed_clips':results,'update_profile':profile(),'current_clip':current_clip,'final_state':state(),'tests_passed':False}
     (OUT/'audio-debug.json').write_text(json.dumps(debug,indent=2))
-    summary={'error':str(error),'update_profile':profile(),'last_command':last_command,'irq_timing':irq_timing()}
-    print('AUDIO FAILURE SUMMARY:\n'+json.dumps(summary,indent=2))
+    print('AUDIO FAILURE SUMMARY:\n'+json.dumps({'error':str(error),'timing':timing(),'update_profile':profile(),'last_command':last_command},indent=2))
     raise
 finally:
     p.stop(save=False)
