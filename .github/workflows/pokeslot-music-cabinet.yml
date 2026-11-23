@@ -1,0 +1,86 @@
+name: Pokeslot Music-Only Cabinet Candidate
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/**'
+      - 'audio/**'
+      - 'constants/**'
+      - 'macros/**'
+      - 'ram/wram.asm'
+      - 'data/pokemon/cries.asm'
+      - '.rgbds-version'
+      - '.github/workflows/pokeslot-music-cabinet.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies and syntax
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0 zip
+          python3 -m venv .music-venv
+          .music-venv/bin/pip install pillow 'pyboy>=2,<3'
+          python3 -m py_compile pokeslot/music_cabinet_build.py pokeslot/music_cabinet_guard.py pokeslot/run_music_regression.py
+      - name: Build pinned RGBDS
+        run: |
+          RGBDS_VERSION="$(tr -d '[:space:]' < .rgbds-version)"
+          [[ "$RGBDS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git clone --depth 1 --branch "v$RGBDS_VERSION" https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Generate baseline and music-only sources
+        run: |
+          export PATH="$GITHUB_WORKSPACE/.music-venv/bin:$PATH"
+          make -C pokeslot -f play.mk build/play/main.asm
+          python3 pokeslot/cabinet_ldh_compat.py
+          make -C pokeslot -f play.mk
+          make -C pokeslot -f native_audio.mk
+          python3 pokeslot/music_cabinet_build.py
+      - name: Build separate candidate and highlight test ROM
+        working-directory: pokeslot
+        run: |
+          rgbasm -Wall -I ../ -o build/music-cabinet/main.o build/music-cabinet/main.asm
+          rgblink -n build/music-cabinet/play.sym -m build/music-cabinet/play.map -o build/music-cabinet/pokeslot-play.gbc build/music-cabinet/main.o
+          rgbfix -v -C -p 0 -m 0x1a -r 0x02 -t POKESLOTPLAY build/music-cabinet/pokeslot-play.gbc
+          rgbasm -Wall -I ../ -D WIN_TESTS=1 -o build/music-cabinet/highlights-test.o build/music-cabinet/main.asm
+          rgblink -n build/music-cabinet/highlights-test.sym -o build/music-cabinet/highlights-test.gbc build/music-cabinet/highlights-test.o
+          rgbfix -v -C -p 0 -m 0x1a -r 0x02 -t WINTEST build/music-cabinet/highlights-test.gbc
+      - name: Play, menu, accounting and reel-data regression with music
+        run: .music-venv/bin/python pokeslot/run_music_regression.py play
+      - name: Existing 180-frame speed gate with music
+        run: .music-venv/bin/python pokeslot/run_music_regression.py speed
+      - name: Exhaustive wins and highlight pixel-mask regression with music
+        run: .music-venv/bin/python pokeslot/run_music_regression.py wins
+      - name: Package separate experimental cabinet ZIP
+        run: |
+          mkdir -p pokeslot/build/music-cabinet/delivery
+          cd pokeslot/build/music-cabinet
+          cp pokeslot-play.gbc README.txt integration-report.json speed-report.json win-report.json music-*-report.json delivery/
+          printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > delivery/build-info.txt
+          cd delivery
+          zip ../pokeslot-music-cabinet.zip *.gbc *.txt *.json
+          unzip -t ../pokeslot-music-cabinet.zip
+      - name: Upload experimental cabinet ZIP after tests pass
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-music-only-cabinet-candidate
+          path: pokeslot/build/music-cabinet/pokeslot-music-cabinet.zip
+          if-no-files-found: error
+      - name: Preserve candidate diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-music-cabinet-diagnostics
+          path: |
+            pokeslot/build/music-cabinet/*report.json
+            pokeslot/build/music-cabinet/*failure.json
+            pokeslot/build/music-cabinet/play.sym
+            pokeslot/build/music-cabinet/play.map
+            pokeslot/build/music-cabinet/main.asm
+          if-no-files-found: warn
