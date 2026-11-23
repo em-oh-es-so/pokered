@@ -29,7 +29,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0 zip
           python3 -m venv .audio-venv
-          .audio-venv/bin/pip install 'pyboy>=2,<3'
+          .audio-venv/bin/pip install pillow 'pyboy>=2,<3'
       - name: Check Python syntax
         run: python3 -m py_compile pokeslot/native_audio_build.py pokeslot/audio_compat.py pokeslot/test_native_audio.py
       - name: Build repository-pinned RGBDS
@@ -58,3 +58,14 @@ jobs:
           name: pokeslot-native-audio-previews
           path: pokeslot/build/audio/pokeslot-native-audio-previews.zip
           if-no-files-found: error
+      - name: Preserve failed audio diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-audio-debug-not-a-game-build
+          path: |
+            pokeslot/build/audio/audio-debug.json
+            pokeslot/build/audio/audio-assets.json
+            pokeslot/build/audio/audio-compat-report.json
+            pokeslot/build/audio/previews/*.wav
+          if-no-files-found: warn
