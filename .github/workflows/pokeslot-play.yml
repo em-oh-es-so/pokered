@@ -7,10 +7,10 @@ on:
       - 'pokeslot/play.mk'
       - 'pokeslot/play_build.py'
       - 'pokeslot/speed_build.py'
+      - 'pokeslot/win_build.py'
       - 'pokeslot/test_speed_rom.py'
-      - 'pokeslot/src/play_runtime.asm'
-      - 'pokeslot/src/cabinet_five.asm'
-      - 'pokeslot/src/accounting_test.asm'
+      - 'pokeslot/test_wins_rom.py'
+      - 'pokeslot/src/**'
       - 'pokeslot/five_assets.py'
       - 'pokeslot/accounting_tables.py'
       - 'pokeslot/preview_classic.py'
@@ -39,20 +39,23 @@ jobs:
           sudo make -C "$RUNNER_TEMP/rgbds" install
       - name: Reference tests
         run: python3 -m unittest discover -s pokeslot/rules -p 'test_*.py' -v
-      - name: Build playable cabinet
-        run: PATH="$GITHUB_WORKSPACE/.play-venv/bin:$PATH" make -C pokeslot -f play.mk
-      - name: Integration tests
-        run: .play-venv/bin/python pokeslot/test_play_rom.py
-      - name: Measure faster reel timing
+      - name: Build playable cabinet and separate highlight test ROM
+        run: PATH="$GITHUB_WORKSPACE/.play-venv/bin:$PATH" make -C pokeslot -f play.mk all highlight-test
+      - name: Integration and paytable graphics tests
+        run: .play-venv/bin/python pokeslot/build/play/test_play_with_wins.py
+      - name: Preserve accepted reel timing
         run: .play-venv/bin/python pokeslot/test_speed_rom.py
+      - name: Check winning lines and exact negative pixel masks
+        run: .play-venv/bin/python pokeslot/test_wins_rom.py
       - name: Package playable ROM ZIP
         run: |
           cd pokeslot/build/play
           test -s pokeslot-play.gbc
           test -s integration-report.json
           test -s speed-report.json
+          test -s win-report.json
           printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > build-info.txt
-          zip pokeslot-play.zip pokeslot-play.gbc play.map play.sym README.txt integration-report.json five-report.json ui-layout.json speed-model-report.json speed-report.json build-info.txt
+          zip pokeslot-play.zip pokeslot-play.gbc play.map play.sym README.txt integration-report.json five-report.json ui-layout.json speed-model-report.json speed-report.json win-layout.json win-report.json build-info.txt
           unzip -t pokeslot-play.zip
       - name: Upload playable ZIP
         uses: actions/upload-artifact@v4
