@@ -8,16 +8,24 @@ OUT=Path(__file__).resolve().parent/'build/audio'
 PREVIEWS=OUT/'previews'
 PREVIEWS.mkdir(exist_ok=True)
 symbols={}
+locations={}
 for line in (OUT/'native-audio.sym').read_text().splitlines():
     parts=line.split()
     if len(parts)==2 and ':' in parts[0] and not parts[0].startswith(';'):
-        symbols[parts[1]]=int(parts[0].split(':')[1],16)
+        bank,address=parts[0].split(':')
+        symbols[parts[1]]=int(address,16)
+        locations[parts[1]]=(int(bank,16),int(address,16))
 assets=json.loads((OUT/'audio-assets.json').read_text())
 p=PyBoy(str(OUT/'native-audio.gbc'),window='null',sound_emulated=True,sound_sample_rate=24000)
 p.set_emulation_speed(0)
 results=[]
 last_command=None
 current_clip=None
+current_irq=None
+last_irq=None
+worst_irq=None
+first_core_deadline_miss=None
+registered_hooks=[]
 
 def read(name,n=1):
     a=symbols[name]
@@ -25,6 +33,41 @@ def read(name,n=1):
 
 def irq_timing():
     return {'entry_scanline':read('AudioEntryLY'),'core_exit_scanline':read('AudioExitLY'),'maximum_core_scanline_span':read('AudioMaximumSpan'),'late_interrupt_entries':read('AudioLateEntries',2),'fault_entry_scanline':read('AudioFaultEntryLY'),'fault_core_exit_scanline':read('AudioFaultExitLY'),'fault_deadline_check_scanline':read('AudioFaultCheckLY'),'maximum_deadline_check_scanline':read('AudioMaximumLY')}
+
+def begin_irq(context):
+    global current_irq
+    current_irq={'divider_start':p.memory[0xff04],'entry_scanline':p.memory[0xff44],'command':last_command,'current_song':read('CurrentSong'),'function_counts':{}}
+
+def count_function(name):
+    if current_irq is not None:
+        key=f'{name}:channel-{p.register_file.C}'
+        counts=current_irq['function_counts']
+        counts[key]=counts.get(key,0)+1
+
+def end_irq(context):
+    global current_irq,last_irq,worst_irq,first_core_deadline_miss
+    if current_irq is None:
+        return
+    current_irq['divider_end']=p.memory[0xff04]
+    current_irq['core_exit_scanline']=read('AudioExitLY')
+    delta=(current_irq['divider_end']-current_irq['divider_start'])&255
+    current_irq['divider_tick_delta']=delta
+    current_irq['approximate_cpu_clock_lower_bound']=max(0,(delta-1)*256)
+    current_irq['approximate_cpu_clock_upper_bound']=(delta+1)*256
+    last_irq=current_irq
+    if worst_irq is None or delta>worst_irq['divider_tick_delta']:
+        worst_irq=current_irq
+    if first_core_deadline_miss is None and (current_irq['core_exit_scanline']<144 or current_irq['core_exit_scanline']>=152):
+        first_core_deadline_miss=current_irq
+    current_irq=None
+
+def register_hook(symbol,callback,context):
+    bank,address=locations[symbol]
+    p.hook_register(bank,address,callback,context)
+    registered_hooks.append(symbol)
+
+def profile():
+    return {'first_core_deadline_miss':first_core_deadline_miss,'worst_update_by_divider':worst_irq,'last_update':last_irq,'registered_hook_count':len(registered_hooks),'divider_measurements_quantized_and_modulo_65536':True,'profiler_does_not_replace_timing_or_non_silence_assertions':True}
 
 def state():
     arrays={}
@@ -80,6 +123,14 @@ def capture(name,frames,onset):
     return {'name':name,'sample_frames':len(audio),'seconds':len(audio)/p.sound.sample_rate,'peak_to_peak':span,'command_frames_captured':len(onset_chunks)}
 
 try:
+    register_hook('AudioIRQ',begin_irq,None)
+    register_hook('AudioIRQ.timingSpanReady',end_irq,None)
+    functions=('PlayNextNote','GetNextMusicByte','PlaySound','MultiplyAdd','CalculateFrequency','InitPitchSlideVars')
+    for bank in range(24,30):
+        for function in functions:
+            symbol=f'Bank{bank}_Audio1_{function}'
+            register_hook(symbol,count_function,function)
+        register_hook(f'Bank{bank}_Audio1_InitPitchSlideVars.divideLoop',count_function,'pitch-slide-subtraction-iteration')
     for _ in range(240):
         tick()
         if read('Ready')==0xa5:
@@ -103,17 +154,18 @@ try:
         results.append(capture('cry-'+name,240,onset))
         a=symbols['wChannelSoundIDs']
         assert not any(p.memory[a+4:a+8]),('Cry did not finish',name)
+    print('AUDIO UPDATE PROFILE: '+json.dumps(profile()))
     assert read('AudioBudgetExceeded')==0,('Native audio exceeded VBlank safety budget',irq_timing())
     assert read('AudioLateEntries',2)==0,('Audio interrupt started late',irq_timing())
-    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'vblank_budget_passed':True,'irq_timing':irq_timing(),'maximum_update_end_scanline':read('AudioMaximumLY'),'cabinet_integration_complete':False,'human_listening_approval':False}
+    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'vblank_budget_passed':True,'irq_timing':irq_timing(),'update_profile':profile(),'maximum_update_end_scanline':read('AudioMaximumLY'),'cabinet_integration_complete':False,'human_listening_approval':False}
     (OUT/'native-audio-report.json').write_text(json.dumps(report,indent=2))
     (PREVIEWS/'README.txt').write_text('NATIVE AUDIO PREVIEWS - NOT A PLAYABLE CABINET UPDATE\nThese WAV files were recorded from the standalone native-audio test ROM in PyBoy, including the frames that accept playback commands. Music clips are short excerpts, not complete tracks.\nSix soundtrack selections, five original interface/slot effects and six species cries are included. Cries retain the original pitch and duration modifiers.\nAutomated non-silence and update-budget tests do not replace listening checks or prove integration with reel DMA, menus, win thresholds or the playlist. Those cabinet features are not implemented by this commit.\n')
     print(json.dumps(report,indent=2))
 except Exception as error:
-    debug={'error_type':type(error).__name__,'error':str(error),'last_command':last_command,'completed_clips':results,'current_clip':current_clip,'final_state':state(),'tests_passed':False}
+    debug={'error_type':type(error).__name__,'error':str(error),'last_command':last_command,'completed_clips':results,'update_profile':profile(),'current_clip':current_clip,'final_state':state(),'tests_passed':False}
     (OUT/'audio-debug.json').write_text(json.dumps(debug,indent=2))
-    summary={'error':str(error),'last_command':last_command,'irq_timing':irq_timing(),'first_frame_states':current_clip['frames'][:4] if current_clip else [],'final_state':debug['final_state']}
-    print(json.dumps(summary,indent=2))
+    summary={'error':str(error),'update_profile':profile(),'last_command':last_command,'irq_timing':irq_timing()}
+    print('AUDIO FAILURE SUMMARY:\n'+json.dumps(summary,indent=2))
     raise
 finally:
     p.stop(save=False)
