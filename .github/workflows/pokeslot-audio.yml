@@ -1,0 +1,52 @@
+name: Pokeslot Native Audio Playback
+on:
+  workflow_dispatch:
+  push:
+    branches: [pokeslot]
+    paths:
+      - 'pokeslot/native_audio_build.py'
+      - 'pokeslot/native_audio.mk'
+      - 'pokeslot/test_native_audio.py'
+      - 'pokeslot/rules/machine.json'
+      - 'audio/**'
+      - 'constants/audio_constants.asm'
+      - 'macros/scripts/audio.asm'
+      - 'data/pokemon/cries.asm'
+      - '.github/workflows/pokeslot-audio.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv libsdl2-2.0-0 zip
+          python3 -m venv .audio-venv
+          .audio-venv/bin/pip install 'pyboy>=2,<3'
+      - name: RGBDS
+        run: |
+          git clone --depth 1 --branch v0.9.1 https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
+          make -C "$RUNNER_TEMP/rgbds" -j2
+          sudo make -C "$RUNNER_TEMP/rgbds" install
+      - name: Build isolated native audio ROM
+        run: make -C pokeslot -f native_audio.mk
+      - name: Record original music and sound previews
+        run: .audio-venv/bin/python pokeslot/test_native_audio.py
+      - name: Package audio-preview ZIP
+        run: |
+          cd pokeslot/build/audio
+          cp native-audio-report.json audio-assets.json previews/
+          printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > previews/build-info.txt
+          cd previews
+          zip ../pokeslot-native-audio-previews.zip *.wav *.json *.txt
+          unzip -t ../pokeslot-native-audio-previews.zip
+      - name: Upload audio previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeslot-native-audio-previews
+          path: pokeslot/build/audio/pokeslot-native-audio-previews.zip
+          if-no-files-found: error
