@@ -6,6 +6,8 @@ on:
     paths:
       - 'pokeslot/play.mk'
       - 'pokeslot/play_build.py'
+      - 'pokeslot/speed_build.py'
+      - 'pokeslot/test_speed_rom.py'
       - 'pokeslot/src/play_runtime.asm'
       - 'pokeslot/src/cabinet_five.asm'
       - 'pokeslot/src/accounting_test.asm'
@@ -41,13 +43,16 @@ jobs:
         run: PATH="$GITHUB_WORKSPACE/.play-venv/bin:$PATH" make -C pokeslot -f play.mk
       - name: Integration tests
         run: .play-venv/bin/python pokeslot/test_play_rom.py
+      - name: Measure faster reel timing
+        run: .play-venv/bin/python pokeslot/test_speed_rom.py
       - name: Package playable ROM ZIP
         run: |
           cd pokeslot/build/play
           test -s pokeslot-play.gbc
           test -s integration-report.json
+          test -s speed-report.json
           printf 'Commit: %s\nRun: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > build-info.txt
-          zip pokeslot-play.zip pokeslot-play.gbc play.map play.sym README.txt integration-report.json five-report.json ui-layout.json build-info.txt
+          zip pokeslot-play.zip pokeslot-play.gbc play.map play.sym README.txt integration-report.json five-report.json ui-layout.json speed-model-report.json speed-report.json build-info.txt
           unzip -t pokeslot-play.zip
       - name: Upload playable ZIP
         uses: actions/upload-artifact@v4
