@@ -23,6 +23,9 @@ def read(name,n=1):
     a=symbols[name]
     return int.from_bytes(bytes(p.memory[a:a+n]),'little')
 
+def irq_timing():
+    return {'entry_scanline':read('AudioEntryLY'),'core_exit_scanline':read('AudioExitLY'),'maximum_core_scanline_span':read('AudioMaximumSpan'),'late_interrupt_entries':read('AudioLateEntries',2),'fault_entry_scanline':read('AudioFaultEntryLY'),'fault_core_exit_scanline':read('AudioFaultExitLY'),'fault_deadline_check_scanline':read('AudioFaultCheckLY'),'maximum_deadline_check_scanline':read('AudioMaximumLY')}
+
 def state():
     arrays={}
     for name in ('wChannelSoundIDs','wChannelFlags1','wChannelNoteSpeeds','wChannelNoteDelayCounters'):
@@ -31,7 +34,7 @@ def state():
     a=symbols['wChannelCommandPointers']
     arrays['channel_pointers']=[int.from_bytes(bytes(p.memory[a+i*2:a+i*2+2]),'little') for i in range(8)]
     registers={f'FF{address:02X}':p.memory[0xff00+address] for address in range(0x10,0x27)}
-    return {'audio_ticks':read('AudioTicks',2),'current_song':read('CurrentSong'),'registers':registers,'software_channels':arrays,'valid_sample_frames':int(p.sound.ndarray.shape[0])}
+    return {'audio_ticks':read('AudioTicks',2),'current_song':read('CurrentSong'),'registers':registers,'software_channels':arrays,'valid_sample_frames':int(p.sound.ndarray.shape[0]),'irq_timing':irq_timing()}
 
 def tick(n=1):
     assert p.tick(n,False,True)
@@ -100,15 +103,16 @@ try:
         results.append(capture('cry-'+name,240,onset))
         a=symbols['wChannelSoundIDs']
         assert not any(p.memory[a+4:a+8]),('Cry did not finish',name)
-    assert read('AudioBudgetExceeded')==0,('Native audio exceeded VBlank safety budget',read('AudioMaximumLY'))
-    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'vblank_budget_passed':True,'maximum_update_end_scanline':read('AudioMaximumLY'),'cabinet_integration_complete':False,'human_listening_approval':False}
+    assert read('AudioBudgetExceeded')==0,('Native audio exceeded VBlank safety budget',irq_timing())
+    assert read('AudioLateEntries',2)==0,('Audio interrupt started late',irq_timing())
+    report={'non_silent_assets_checked':len(results),'clips':results,'command_frame_sampling_enabled':True,'update_cadence_checked':True,'vblank_budget_passed':True,'irq_timing':irq_timing(),'maximum_update_end_scanline':read('AudioMaximumLY'),'cabinet_integration_complete':False,'human_listening_approval':False}
     (OUT/'native-audio-report.json').write_text(json.dumps(report,indent=2))
     (PREVIEWS/'README.txt').write_text('NATIVE AUDIO PREVIEWS - NOT A PLAYABLE CABINET UPDATE\nThese WAV files were recorded from the standalone native-audio test ROM in PyBoy, including the frames that accept playback commands. Music clips are short excerpts, not complete tracks.\nSix soundtrack selections, five original interface/slot effects and six species cries are included. Cries retain the original pitch and duration modifiers.\nAutomated non-silence and update-budget tests do not replace listening checks or prove integration with reel DMA, menus, win thresholds or the playlist. Those cabinet features are not implemented by this commit.\n')
     print(json.dumps(report,indent=2))
 except Exception as error:
     debug={'error_type':type(error).__name__,'error':str(error),'last_command':last_command,'completed_clips':results,'current_clip':current_clip,'final_state':state(),'tests_passed':False}
     (OUT/'audio-debug.json').write_text(json.dumps(debug,indent=2))
-    summary={'error':str(error),'last_command':last_command,'first_frame_states':current_clip['frames'][:4] if current_clip else [],'final_state':debug['final_state']}
+    summary={'error':str(error),'last_command':last_command,'irq_timing':irq_timing(),'first_frame_states':current_clip['frames'][:4] if current_clip else [],'final_state':debug['final_state']}
     print(json.dumps(summary,indent=2))
     raise
 finally:
