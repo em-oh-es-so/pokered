@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y build-essential bison flex libpng-dev pkg-config python3-venv
           python3 -m venv .layout-venv
           .layout-venv/bin/pip install pillow
-          python3 -m py_compile pokeslot/audio_cabinet_layout.py
+          python3 -m py_compile pokeslot/audio_cabinet_layout.py pokeslot/cabinet_ldh_compat.py
       - name: Build repository-pinned RGBDS
         run: |
           RGBDS_VERSION="$(tr -d '[:space:]' < .rgbds-version)"
@@ -34,9 +34,11 @@ jobs:
           git clone --depth 1 --branch "v$RGBDS_VERSION" https://github.com/gbdev/rgbds.git "$RUNNER_TEMP/rgbds"
           make -C "$RUNNER_TEMP/rgbds" -j2
           sudo make -C "$RUNNER_TEMP/rgbds" install
-      - name: Build unchanged cabinet and standalone audio sources
+      - name: Build syntax-normalized cabinet baseline and audio sources
         run: |
           export PATH="$GITHUB_WORKSPACE/.layout-venv/bin:$PATH"
+          make -C pokeslot -f play.mk build/play/main.asm
+          python3 pokeslot/cabinet_ldh_compat.py
           make -C pokeslot -f play.mk
           make -C pokeslot -f native_audio.mk
       - name: Link audio-disabled memory reservation build
@@ -58,6 +60,7 @@ jobs:
             pokeslot/build/audio/cabinet-audio-layout.map
             pokeslot/build/audio/cabinet-audio-layout.asm
             pokeslot/build/audio/cabinet-audio-layout.inc
+            pokeslot/build/play/cabinet-ldh-compat-report.json
             pokeslot/build/play/play.sym
             pokeslot/build/play/play.map
           if-no-files-found: warn
