@@ -73,7 +73,20 @@ def drain(limit=600):
             return
     raise AssertionError('Payout/cry/effect sequence did not finish')
 
+def cry_counts():
+    return [p.read(name,2) for name in ('CabinetCryQueued','CabinetCryPlayed','CabinetCryCompleted')]
+
+def unchanged_state():
+    return [p.read('Credits',4),p.read('Payout',2),p.read('Bet'),p.read('LineIndex'),p.read('CabinetCryMode')]
+
+def press(key,frames=3):
+    p.button_press(key)
+    tick(frames)
+    p.button_release(key)
+    tick(3)
+
 lookup_cases=0
+preview_cases=0
 clips=[]
 try:
     for _ in range(240):
@@ -83,6 +96,7 @@ try:
     else:
         raise AssertionError('Cry candidate failed to boot')
     assert p.read('CabinetCryMode')==2
+    assert p.read('CabinetCryPreviewIndex')==0
     rom=(OUT/'pokeslot-play.gbc').read_bytes()
     outcomes=list(product(range(6),repeat=5))
     for index,lines in enumerate(MACHINE['line_counts']):
@@ -105,7 +119,7 @@ try:
     assert p.read('CabinetCryQueued',2)==before
     for species in range(6):
         offset=next(i for i,v in enumerate(table) if v&7==species)
-        before=[p.read(name,2) for name in ('CabinetCryQueued','CabinetCryPlayed','CabinetCryCompleted')]
+        before=cry_counts()
         fixture(outcomes[offset],5,1)
         capture=[]
         command(3)
@@ -124,7 +138,7 @@ try:
         p.button_release('up')
         drain()
         tick(12)
-        after=[p.read(name,2) for name in ('CabinetCryQueued','CabinetCryPlayed','CabinetCryCompleted')]
+        after=cry_counts()
         assert after==[value+1 for value in before],(species,before,after)
         audio=np.concatenate(capture)
         capture=None
@@ -142,10 +156,68 @@ try:
         command(3)
         drain()
         assert p.read('CabinetCryQueued',2)-before==int(eligible)
+    for expected in (0,1,2,3,4,5,0):
+        before=cry_counts()
+        state=unchanged_state()
+        press('select',30)
+        drain()
+        tick(12)
+        assert cry_counts()==[value+1 for value in before],'Held SELECT repeated or preview missing'
+        assert p.read('CabinetCryLastSpecies')==expected
+        assert p.read('CabinetCryPreviewIndex')==(expected+1)%6
+        assert unchanged_state()==state,'Preview changed gameplay or cry mode'
+        preview_cases+=1
+    before=cry_counts()
+    state=unchanged_state()
+    expected=p.read('CabinetCryPreviewIndex')
+    press('select',1)
+    for _ in range(240):
+        tick()
+        if p.read('CabinetCryActive'):
+            break
+    else:
+        raise AssertionError('Preview failed to become active')
+    press('select',1)
+    drain()
+    assert cry_counts()==[value+2 for value in before]
+    assert p.read('CabinetCryLastSpecies')==(expected+1)%6
+    assert unchanged_state()==state
+    preview_cases+=2
+    index=p.read('CabinetCryPreviewIndex')
+    queued=p.read('CabinetCryQueued',2)
+    press('b')
+    assert p.read('MenuMode')==1
+    press('select')
+    assert p.read('CabinetCryPreviewIndex')==index
+    assert p.read('CabinetCryQueued',2)==queued
+    press('b')
+    tick(12)
+    assert p.read('MenuMode')==0
+    p.button_press('a')
+    for _ in range(20):
+        tick()
+        if p.read('SpinActive'):
+            break
+    else:
+        raise AssertionError('Spin did not start for preview exclusion test')
+    p.button_release('a')
+    index=p.read('CabinetCryPreviewIndex')
+    queued=p.read('CabinetCryQueued',2)
+    press('select')
+    assert p.read('SpinActive')
+    assert p.read('CabinetCryPreviewIndex')==index
+    assert p.read('CabinetCryQueued',2)==queued
+    for _ in range(180):
+        tick()
+        if not p.read('SpinActive'):
+            break
+    else:
+        raise AssertionError('Preview exclusion spin exceeded speed limit')
+    drain()
 finally:
     p.stop(save=False)
 report_path=OUT/'music-cries-report.json'
 report=json.loads(report_path.read_text())
-report.update({'suite_passed':True,'runtime_lookup_cases_checked':lookup_cases,'all_46656_packed_bytes_present_in_candidate':True,'species_playback_cases':clips,'cry_start_hooks_checked':len(starts),'off_every_win_and_big_wins_modes_checked':True,'one_request_one_start_one_completion_per_playback_fixture':True,'payout_not_interrupted_by_cry':True,'effects_not_dispatched_during_active_cry':True,'original_pitch_and_duration_presets_checked':True,'fixtures_are_synthetic_settled_wins':True,'audio_settings_menu_implemented':False,'human_listening_approval':False})
+report.update({'suite_passed':True,'runtime_lookup_cases_checked':lookup_cases,'all_46656_packed_bytes_present_in_candidate':True,'species_playback_cases':clips,'cry_start_hooks_checked':len(starts),'off_every_win_and_big_wins_modes_checked':True,'one_request_one_start_one_completion_per_playback_fixture':True,'payout_not_interrupted_by_cry':True,'effects_not_dispatched_during_active_cry':True,'original_pitch_and_duration_presets_checked':True,'fixtures_are_synthetic_settled_wins':True,'select_preview_cases_checked':preview_cases,'select_preview_cycles_and_wraps':True,'held_select_does_not_repeat':True,'preview_can_wait_behind_active_cry':True,'preview_preserves_credits_payout_bet_lines_and_mode':True,'select_preview_ignored_in_menus_and_spins':True,'audio_settings_menu_implemented':False,'human_listening_approval':False})
 report_path.write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
